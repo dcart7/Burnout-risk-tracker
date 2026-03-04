@@ -1,7 +1,13 @@
 from rest_framework import serializers
 from django.db import transaction
 
-from .models import Question, SurveyTemplate, SurveyTemplateQuestion
+from .models import (
+    Question,
+    SurveyTemplate,
+    SurveyTemplateQuestion,
+    SurveySubmission,
+    SurveyAnswer,
+)
 
 
 class QuestionSerializer(serializers.ModelSerializer):
@@ -132,3 +138,85 @@ class SurveyTemplateSerializer(serializers.ModelSerializer):
             instance.full_clean()
             instance.save()
         return instance
+
+
+class SurveyAnswerInputSerializer(serializers.Serializer):
+    question_id = serializers.IntegerField()
+    score = serializers.IntegerField(min_value=1, max_value=10)
+
+
+class WeeklySurveySubmissionSerializer(serializers.Serializer):
+    answers = SurveyAnswerInputSerializer(many=True)
+
+    def validate(self, attrs):
+        active_templates = SurveyTemplate.objects.filter(is_active=True)
+        active_templates_count = active_templates.count()
+        if active_templates_count == 0:
+            raise serializers.ValidationError("No active survey template is configured.")
+        if active_templates_count > 1:
+            raise serializers.ValidationError(
+                "Multiple active survey templates found. Keep only one active template."
+            )
+        active_template = active_templates.prefetch_related("template_questions__question").get()
+
+        answers = attrs["answers"]
+        if len(answers) != 8:
+            raise serializers.ValidationError(
+                {"answers": "Weekly survey must contain exactly 8 answers."}
+            )
+
+        question_ids = [answer["question_id"] for answer in answers]
+        if len(set(question_ids)) != 8:
+            raise serializers.ValidationError(
+                {"answers": "Each question in weekly survey must be answered only once."}
+            )
+
+        template_questions = list(active_template.template_questions.select_related("question"))
+        template_question_ids = {template_question.question_id for template_question in template_questions}
+        if set(question_ids) != template_question_ids:
+            raise serializers.ValidationError(
+                {"answers": "Answers must match exactly the 8 questions from active template."}
+            )
+
+        question_by_id = {template_question.question_id: template_question.question for template_question in template_questions}
+        category_counts = {
+            Question.Category.STRESS: 0,
+            Question.Category.WORKLOAD: 0,
+            Question.Category.MOTIVATION: 0,
+            Question.Category.ENERGY: 0,
+        }
+        for answer in answers:
+            category = question_by_id[answer["question_id"]].category
+            category_counts[category] += 1
+
+        invalid_categories = [
+            category for category, count in category_counts.items() if count != 2
+        ]
+        if invalid_categories:
+            raise serializers.ValidationError(
+                {"answers": "Weekly survey must contain 2 answered questions per category."}
+            )
+
+        attrs["active_template"] = active_template
+        attrs["question_by_id"] = question_by_id
+        return attrs
+
+    @transaction.atomic
+    def create(self, validated_data):
+        user = self.context["request"].user
+        active_template = validated_data["active_template"]
+        answers_data = validated_data["answers"]
+        question_by_id = validated_data["question_by_id"]
+
+        submission = SurveySubmission.objects.create(user=user, template=active_template)
+        SurveyAnswer.objects.bulk_create(
+            [
+                SurveyAnswer(
+                    submission=submission,
+                    question=question_by_id[answer["question_id"]],
+                    score=answer["score"],
+                )
+                for answer in answers_data
+            ]
+        )
+        return submission

@@ -1,0 +1,105 @@
+text,category,is_active
+"How well are you currently managing your stress levels?",stress,true
+"How calm do you feel during your workday?",stress,true
+"How often do you feel emotionally balanced at work?",stress,true
+"How effectively do you cope with unexpected challenges?",stress,true
+"How mentally relaxed do you feel while working?",stress,true
+"How well do you recover after a stressful situation?",stress,true
+"How confident do you feel handling pressure?",stress,true
+"How stable is your mood during work hours?",stress,true
+"How often do you feel overwhelmed by responsibilities?",stress,true
+"How well do you maintain focus under stress?",stress,true
+"How supported do you feel when dealing with difficulties?",stress,true
+"How manageable does your stress feel overall?",stress,true
+"How emotionally resilient do you feel?",stress,true
+"How comfortable are you discussing stressful issues with others?",stress,true
+"How in control do you feel of your emotional reactions?",stress,true
+"How balanced is your mental state at work?",stress,true
+"How often do you feel tension-free at work?",stress,true
+"How well do you separate work stress from personal life?",stress,true
+"How quickly do you regain composure after setbacks?",stress,true
+"How mentally clear do you feel despite challenges?",stress,true
+"How optimistic do you feel in difficult situations?",stress,true
+"How often do you experience anxiety related to work?",stress,true
+"How supported do you feel by your environment when stressed?",stress,true
+"How prepared do you feel to handle stressful tasks?",stress,true
+"How steady is your concentration during demanding periods?",stress,true
+"How satisfied are you with your current stress level?",stress,true
+"How manageable is your current workload?",workload,true
+"How realistic are your deadlines?",workload,true
+"How balanced is the amount of work you receive?",workload,true
+"How comfortable are you with the pace of your work?",workload,true
+"How evenly distributed are your responsibilities?",workload,true
+"How achievable are your daily tasks?",workload,true
+"How satisfied are you with your task volume?",workload,true
+"How well does your workload match your capacity?",workload,true
+"How sustainable is your current work intensity?",workload,true
+"How clear are your priorities?",workload,true
+"How organized does your workload feel?",workload,true
+"How fairly are tasks assigned to you?",workload,true
+"How often do you complete tasks on time without pressure?",workload,true
+"How reasonable are expectations placed on you?",workload,true
+"How balanced is your work-life integration?",workload,true
+"How well can you plan your work schedule?",workload,true
+"How comfortable are you taking breaks when needed?",workload,true
+"How flexible is your workload when unexpected issues arise?",workload,true
+"How well do you control the volume of incoming tasks?",workload,true
+"How predictable is your workload?",workload,true
+"How supported do you feel in managing responsibilities?",workload,true
+"How appropriate is your workload for your role?",workload,true
+"How often do you feel overloaded?",workload,true
+"How well does your workload align with your skills?",workload,true
+"How satisfied are you with the distribution of complex tasks?",workload,true
+"How healthy does your workload feel overall?",workload,true
+"How motivated do you feel to perform your tasks?",motivation,true
+"How inspired are you by your current work?",motivation,true
+"How committed do you feel to achieving your goals?",motivation,true
+"How engaged are you during work activities?",motivation,true
+"How meaningful does your work feel?",motivation,true
+"How eager are you to start your workday?",motivation,true
+"How driven are you to improve your performance?",motivation,true
+"How connected do you feel to your role?",motivation,true
+"How enthusiastic are you about new tasks?",motivation,true
+"How proud do you feel of your contributions?",motivation,true
+"How aligned are your personal goals with your work?",motivation,true
+"How confident are you in your ability to succeed?",motivation,true
+"How interested are you in your current projects?",motivation,true
+"How willing are you to take initiative?",motivation,true
+"How energized do you feel by your achievements?",motivation,true
+"How supported do you feel in your professional growth?",motivation,true
+"How optimistic are you about your career development?",motivation,true
+"How satisfied are you with your professional progress?",motivation,true
+"How excited are you about future opportunities?",motivation,true
+"How persistent are you when facing obstacles?",motivation,true
+"How purposeful does your work feel?",motivation,true
+"How involved do you feel in team objectives?",motivation,true
+"How valued do you feel for your work?",motivation,true
+"How determined are you to meet expectations?",motivation,true
+"How focused are you on reaching your targets?",motivation,true
+"How strong is your internal drive at work?",motivation,true
+"How energetic do you feel during the workday?",energy,true
+"How physically active do you feel at work?",energy,true
+"How mentally alert are you?",energy,true
+"How refreshed do you feel when starting your day?",energy,true
+"How sustainable is your energy throughout the day?",energy,true
+"How quickly do you recover after demanding tasks?",energy,true
+"How strong is your concentration level?",energy,true
+"How productive do you feel?",energy,true
+"How often do you feel exhausted at work?",energy,true
+"How balanced is your physical and mental stamina?",energy,true
+"How well do you maintain energy until the end of the day?",energy,true
+"How motivated do you feel to stay active?",energy,true
+"How resilient is your energy during busy periods?",energy,true
+"How stable is your performance throughout the day?",energy,true
+"How awake and attentive do you feel?",energy,true
+"How energized do you feel after breaks?",energy,true
+"How capable do you feel handling physically demanding tasks?",energy,true
+"How lively do you feel during meetings?",energy,true
+"How refreshed do you feel after sleep?",energy,true
+"How consistent is your daily productivity?",energy,true
+"How well do you avoid burnout symptoms?",energy,true
+"How physically comfortable do you feel while working?",energy,true
+"How steady is your mental stamina?",energy,true
+"How energized do you feel in the afternoon?",energy,true
+"How ready do you feel to take on additional tasks?",energy,true
+"How healthy does your overall energy level feel?",energy,true

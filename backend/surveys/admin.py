@@ -54,6 +54,19 @@ class QuestionAdmin(admin.ModelAdmin):
     list_display = ("id", "category", "is_active")
     list_filter = ("category", "is_active")
     search_fields = ("text",)
+    readonly_fields = ("text", "category", "is_active")
+
+    def has_view_permission(self, request, obj=None):
+        return bool(request.user and request.user.is_active and request.user.is_staff)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(SurveyTemplate)

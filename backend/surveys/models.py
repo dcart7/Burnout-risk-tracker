@@ -1,5 +1,11 @@
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.conf import settings
+from django.utils import timezone
+
+
+def get_current_week_number():
+    return timezone.now().isocalendar().week
 
 
 class SurveyTemplate(models.Model):
@@ -115,3 +121,71 @@ class SurveyTemplateQuestion(models.Model):
 
     def __str__(self):
         return f"v{self.template.version} - Q{self.position}"
+
+
+class SurveySubmission(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="survey_submissions",
+    )
+    template = models.ForeignKey(
+        SurveyTemplate,
+        on_delete=models.PROTECT,
+        related_name="submissions",
+    )
+    week_number = models.PositiveSmallIntegerField(
+        default=get_current_week_number,
+    )
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "survey_submissions"
+        verbose_name = "Survey Submission"
+        verbose_name_plural = "Survey Submissions"
+        ordering = ("-submitted_at",)
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(week_number__gte=1) & models.Q(week_number__lte=53),
+                name="ck_survey_submission_week_number_1_53",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Submission #{self.pk} by {self.user_id}"
+
+
+class SurveyAnswer(models.Model):
+    submission = models.ForeignKey(
+        SurveySubmission,
+        on_delete=models.CASCADE,
+        related_name="answers",
+    )
+    question = models.ForeignKey(Question, on_delete=models.PROTECT, related_name="answers")
+    score = models.PositiveSmallIntegerField()
+
+    class Meta:
+        db_table = "survey_answers"
+        verbose_name = "Survey Answer"
+        verbose_name_plural = "Survey Answers"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["submission", "question"], name="uq_submission_question"
+            ),
+            models.CheckConstraint(
+                check=models.Q(score__gte=1) & models.Q(score__lte=10),
+                name="ck_survey_answer_score_1_10",
+            ),
+        ]
+
+    def clean(self):
+        if not self.submission_id or not self.question_id:
+            return
+        template_question_ids = set(
+            self.submission.template.template_questions.values_list("question_id", flat=True)
+        )
+        if self.question_id not in template_question_ids:
+            raise ValidationError("Question must belong to the submission template.")
+
+    def __str__(self):
+        return f"Submission #{self.submission_id} - Q{self.question_id}: {self.score}"
