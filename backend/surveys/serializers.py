@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.db import transaction
+from django.db.models import Max
 
 from .models import (
     Question,
@@ -42,7 +43,7 @@ class SurveyTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = SurveyTemplate
         fields = ("id", "version", "created_at", "is_active", "template_questions", "questions")
-        read_only_fields = ("created_at",)
+        read_only_fields = ("version", "created_at")
 
     def validate(self, attrs):
         for category in Question.Category.values:
@@ -100,6 +101,8 @@ class SurveyTemplateSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         template_questions = validated_data.pop("template_questions")
+        next_version = (SurveyTemplate.objects.aggregate(max_version=Max("version"))["max_version"] or 0) + 1
+        validated_data["version"] = next_version
         template = SurveyTemplate.objects.create(**validated_data)
         SurveyTemplateQuestion.objects.bulk_create(
             [
@@ -111,6 +114,10 @@ class SurveyTemplateSerializer(serializers.ModelSerializer):
                 for item in template_questions
             ]
         )
+        if template.is_active:
+            SurveyTemplate.objects.filter(is_active=True).exclude(pk=template.pk).update(
+                is_active=False
+            )
         template.full_clean()
         template.save()
         return template
@@ -118,26 +125,33 @@ class SurveyTemplateSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def update(self, instance, validated_data):
         template_questions = validated_data.pop("template_questions", None)
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        instance.full_clean()
-        instance.save()
-
-        if template_questions is not None:
-            instance.template_questions.all().delete()
-            SurveyTemplateQuestion.objects.bulk_create(
-                [
-                    SurveyTemplateQuestion(
-                        template=instance,
-                        question_id=item["question_id"],
-                        position=item["position"],
-                    )
-                    for item in template_questions
-                ]
+        if template_questions is None:
+            template_questions = list(
+                instance.template_questions.values("question_id", "position")
             )
-            instance.full_clean()
-            instance.save()
-        return instance
+
+        next_version = (SurveyTemplate.objects.aggregate(max_version=Max("version"))["max_version"] or 0) + 1
+        new_template = SurveyTemplate.objects.create(
+            version=next_version,
+            is_active=validated_data.get("is_active", instance.is_active),
+        )
+        SurveyTemplateQuestion.objects.bulk_create(
+            [
+                SurveyTemplateQuestion(
+                    template=new_template,
+                    question_id=item["question_id"],
+                    position=item["position"],
+                )
+                for item in template_questions
+            ]
+        )
+        if new_template.is_active:
+            SurveyTemplate.objects.filter(is_active=True).exclude(pk=new_template.pk).update(
+                is_active=False
+            )
+        new_template.full_clean()
+        new_template.save()
+        return new_template
 
 
 class SurveyAnswerInputSerializer(serializers.Serializer):
