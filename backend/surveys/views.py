@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .models import Question, SurveyTemplate, SurveyAnswer
-from .permissions import IsHRTemplateManager
+from .permissions import IsHRQuestionManager, IsHRTemplateManager
 from .serializers import (
     QuestionSerializer,
     SurveyTemplateSerializer,
@@ -17,7 +17,7 @@ from users.permissions import HasRBACPermissions
 
 class QuestionViewSet(ReadOnlyModelViewSet):
     serializer_class = QuestionSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsHRQuestionManager]
 
     def get_queryset(self):
         queryset = Question.objects.all().order_by("id")

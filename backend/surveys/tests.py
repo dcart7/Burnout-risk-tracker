@@ -15,6 +15,13 @@ from .models import Question, SurveyTemplate, SurveyTemplateQuestion, SurveySubm
 class QuestionPoolAPITestCase(APITestCase):
     def setUp(self):
         self.pool_url = reverse("question-pool")
+        self.hr_user = get_user_model().objects.create_user(
+            username="hr_manager",
+            password="test-pass-123",
+        )
+        manage_question_bank = Permission.objects.get(codename="manage_question_bank")
+        self.hr_user.user_permissions.add(manage_question_bank)
+
         self.user = get_user_model().objects.create_user(
             username="employee",
             password="test-pass-123",
@@ -41,10 +48,10 @@ class QuestionPoolAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_pool_returns_only_active_questions_grouped_by_category(self):
-        self.client.force_authenticate(self.user)
+        self.client.force_authenticate(self.hr_user)
         response = self.client.get(self.pool_url)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(response.data["count"], 2)
         self.assertEqual(len(response.data["results"]), 2)
         self.assertEqual(
@@ -62,26 +69,39 @@ class QuestionPoolAPITestCase(APITestCase):
         self.assertEqual(len(response.data["by_category"][Question.Category.MOTIVATION]), 0)
 
     def test_pool_allows_filter_by_category(self):
-        self.client.force_authenticate(self.user)
+        self.client.force_authenticate(self.hr_user)
         response = self.client.get(self.pool_url, {"category": Question.Category.STRESS})
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(response.data["count"], 1)
         self.assertEqual(response.data["results"][0]["id"], self.active_stress_question.id)
 
-    def test_question_create_is_not_allowed_for_api(self):
+    def test_pool_denies_employee_without_hr_permission(self):
         self.client.force_authenticate(self.user)
+        response = self.client.get(self.pool_url)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_question_create_not_allowed_for_hr(self):
+        self.client.force_authenticate(self.hr_user)
         response = self.client.post(
             reverse("question-list"),
-            {
-                "text": "New question",
-                "category": Question.Category.STRESS,
-                "is_active": True,
-            },
+            {"text": "New question", "category": Question.Category.STRESS, "is_active": True},
             format="json",
         )
 
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        self.assertEqual(Question.objects.filter(text="New question").count(), 0)
+
+    def test_question_create_denied_for_employee_without_hr_permission(self):
+        self.client.force_authenticate(self.user)
+        response = self.client.post(
+            reverse("question-list"),
+            {"text": "New question", "category": Question.Category.STRESS, "is_active": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class ImportQuestionsCommandTestCase(TestCase):
@@ -205,3 +225,87 @@ class WeeklySurveySubmissionAPITestCase(APITestCase):
         response = self.client.post(self.url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("2 answered questions per category", str(response.data))
+
+
+class SurveyTemplateVersioningAPITestCase(APITestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="hr_template_manager",
+            password="test-pass-123",
+        )
+        manage_templates = Permission.objects.get(codename="manage_survey_templates")
+        self.user.user_permissions.add(manage_templates)
+
+        self.questions = []
+        index = 1
+        for category in (
+            Question.Category.STRESS,
+            Question.Category.WORKLOAD,
+            Question.Category.MOTIVATION,
+            Question.Category.ENERGY,
+        ):
+            for _ in range(25):
+                self.questions.append(
+                    Question.objects.create(
+                        text=f"Question bank item {index}",
+                        category=category,
+                        is_active=True,
+                    )
+                )
+                index += 1
+
+        self.template = SurveyTemplate.objects.create(version=1, is_active=True)
+        initial_questions = []
+        for category in (
+            Question.Category.STRESS,
+            Question.Category.WORKLOAD,
+            Question.Category.MOTIVATION,
+            Question.Category.ENERGY,
+        ):
+            initial_questions.extend(
+                list(Question.objects.filter(category=category, is_active=True).order_by("id")[:2])
+            )
+        for position, question in enumerate(initial_questions, start=1):
+            SurveyTemplateQuestion.objects.create(
+                template=self.template,
+                question=question,
+                position=position,
+            )
+
+        self.url = reverse("survey-template-detail", args=[self.template.id])
+
+    def test_update_creates_new_template_version(self):
+        self.client.force_authenticate(self.user)
+        replacement_questions = []
+        for category in (
+            Question.Category.STRESS,
+            Question.Category.WORKLOAD,
+            Question.Category.MOTIVATION,
+            Question.Category.ENERGY,
+        ):
+            replacement_questions.extend(
+                list(
+                    Question.objects.filter(category=category, is_active=True).order_by("id")[2:4]
+                )
+            )
+        payload = {
+            "is_active": True,
+            "template_questions": [
+                {"question_id": question.id, "position": idx}
+                for idx, question in enumerate(replacement_questions, start=1)
+            ],
+        }
+
+        response = self.client.patch(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(SurveyTemplate.objects.count(), 2)
+        self.template.refresh_from_db()
+        self.assertFalse(self.template.is_active)
+
+        new_template = SurveyTemplate.objects.order_by("-version").first()
+        self.assertEqual(new_template.version, 2)
+        self.assertTrue(new_template.is_active)
+        self.assertEqual(new_template.template_questions.count(), 8)
+        self.assertEqual(response.data["id"], new_template.id)
+        self.assertEqual(response.data["version"], 2)
