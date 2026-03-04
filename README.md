@@ -35,6 +35,34 @@
    python manage.py runserver
    ```
 
+### Банк вопросов (фиксированный, не через HR API)
+
+- Источник вопросов в репозитории:
+  - `backend/surveys/fixtures/questions.csv` (рекомендуется для редактирования)
+  - `backend/surveys/fixtures/questions.json` (fixture для `loaddata`)
+- Формат CSV:
+  - `text,category,is_active`
+  - `category`: `stress`, `workload`, `motivation`, `energy`
+  - `is_active`: `true` или `false` (опционально, по умолчанию `true`)
+
+Импорт CSV в БД:
+```bash
+cd backend
+./venv/bin/python manage.py import_questions surveys/fixtures/questions.csv
+```
+
+Полная замена банка вопросов:
+```bash
+cd backend
+./venv/bin/python manage.py import_questions surveys/fixtures/questions.csv --replace
+```
+
+Загрузка fixture JSON:
+```bash
+cd backend
+./venv/bin/python manage.py loaddata surveys/fixtures/questions.json
+```
+
 ### 2. Фронтенд (React)
 
 1. Перейдите в папку:
@@ -54,6 +82,24 @@
 ## API Документация (текущая)
 
 - `GET /api/hello/` - Тестовый эндпоинт, возвращает "Hello from Django".
+- `GET /api/questions/pool/` - Пул активных вопросов для авторизованных пользователей.
+- `POST /api/weekly-surveys/submit/` - Отправка weekly survey (8 ответов по активному шаблону, score 1..10).
+
+Пример `POST /api/weekly-surveys/submit/`:
+```json
+{
+  "answers": [
+    { "question_id": 1, "score": 7 },
+    { "question_id": 2, "score": 8 },
+    { "question_id": 3, "score": 6 },
+    { "question_id": 4, "score": 7 },
+    { "question_id": 5, "score": 9 },
+    { "question_id": 6, "score": 8 },
+    { "question_id": 7, "score": 7 },
+    { "question_id": 8, "score": 6 }
+  ]
+}
+```
 
 ---
 

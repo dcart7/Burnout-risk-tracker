@@ -1,0 +1,74 @@
+[
+  {
+    "model": "surveys.question",
+    "pk": 1,
+    "fields": {
+      "text": "I feel emotionally drained after work.",
+      "category": "stress",
+      "is_active": true
+    }
+  },
+  {
+    "model": "surveys.question",
+    "pk": 2,
+    "fields": {
+      "text": "I struggle to disconnect from work during personal time.",
+      "category": "stress",
+      "is_active": true
+    }
+  },
+  {
+    "model": "surveys.question",
+    "pk": 3,
+    "fields": {
+      "text": "I have too many tasks to complete in my working day.",
+      "category": "workload",
+      "is_active": true
+    }
+  },
+  {
+    "model": "surveys.question",
+    "pk": 4,
+    "fields": {
+      "text": "I regularly need overtime to finish my responsibilities.",
+      "category": "workload",
+      "is_active": true
+    }
+  },
+  {
+    "model": "surveys.question",
+    "pk": 5,
+    "fields": {
+      "text": "I feel motivated to start my workday.",
+      "category": "motivation",
+      "is_active": true
+    }
+  },
+  {
+    "model": "surveys.question",
+    "pk": 6,
+    "fields": {
+      "text": "My work still feels meaningful to me.",
+      "category": "motivation",
+      "is_active": true
+    }
+  },
+  {
+    "model": "surveys.question",
+    "pk": 7,
+    "fields": {
+      "text": "I have enough energy to stay focused throughout the day.",
+      "category": "energy",
+      "is_active": true
+    }
+  },
+  {
+    "model": "surveys.question",
+    "pk": 8,
+    "fields": {
+      "text": "I recover well between workdays.",
+      "category": "energy",
+      "is_active": true
+    }
+  }
+]
