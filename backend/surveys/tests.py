@@ -82,7 +82,7 @@ class QuestionPoolAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_question_create_allowed_for_hr(self):
+    def test_question_create_not_allowed_for_hr(self):
         self.client.force_authenticate(self.hr_user)
         response = self.client.post(
             reverse("question-list"),
@@ -90,10 +90,10 @@ class QuestionPoolAPITestCase(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(Question.objects.filter(text="New question").count(), 1)
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        self.assertEqual(Question.objects.filter(text="New question").count(), 0)
 
-    def test_question_create_denied_for_employee(self):
+    def test_question_create_denied_for_employee_without_hr_permission(self):
         self.client.force_authenticate(self.user)
         response = self.client.post(
             reverse("question-list"),

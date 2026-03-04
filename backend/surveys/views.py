@@ -1,4 +1,4 @@
-from rest_framework.viewsets import ModelViewSet
+from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
@@ -15,7 +15,7 @@ from .serializers import (
 from users.permissions import HasRBACPermissions
 
 
-class QuestionViewSet(ModelViewSet):
+class QuestionViewSet(ReadOnlyModelViewSet):
     serializer_class = QuestionSerializer
     permission_classes = [IsAuthenticated, IsHRQuestionManager]
 
