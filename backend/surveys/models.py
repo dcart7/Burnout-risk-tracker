@@ -173,8 +173,8 @@ class SurveyAnswer(models.Model):
                 fields=["submission", "question"], name="uq_submission_question"
             ),
             models.CheckConstraint(
-                check=models.Q(score__gte=1) & models.Q(score__lte=10),
-                name="ck_survey_answer_score_1_10",
+                check=models.Q(score__gte=0) & models.Q(score__lte=10),
+                name="ck_survey_answer_score_0_10",
             ),
         ]
 

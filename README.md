@@ -83,7 +83,7 @@ cd backend
 
 - `GET /api/hello/` - Тестовый эндпоинт, возвращает "Hello from Django".
 - `GET /api/questions/pool/` - Пул активных вопросов для авторизованных пользователей.
-- `POST /api/weekly-surveys/submit/` - Отправка weekly survey (8 ответов по активному шаблону, score 1..10).
+- `POST /api/weekly-surveys/submit/` - Отправка weekly survey (8 ответов по активному шаблону, score 0..10).
 
 Пример `POST /api/weekly-surveys/submit/`:
 ```json
