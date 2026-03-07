@@ -156,7 +156,7 @@ class SurveyTemplateSerializer(serializers.ModelSerializer):
 
 class SurveyAnswerInputSerializer(serializers.Serializer):
     question_id = serializers.IntegerField()
-    score = serializers.IntegerField(min_value=1, max_value=10)
+    score = serializers.IntegerField(min_value=0, max_value=10)
 
 
 class WeeklySurveySubmissionSerializer(serializers.Serializer):

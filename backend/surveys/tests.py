@@ -226,6 +226,32 @@ class WeeklySurveySubmissionAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("2 answered questions per category", str(response.data))
 
+    def test_accepts_score_zero(self):
+        self.client.force_authenticate(self.user)
+        payload = self._valid_payload()
+        payload["answers"][0]["score"] = 0
+
+        response = self.client.post(self.url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_rejects_score_below_zero(self):
+        self.client.force_authenticate(self.user)
+        payload = self._valid_payload()
+        payload["answers"][0]["score"] = -1
+
+        response = self.client.post(self.url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("score", str(response.data))
+
+    def test_rejects_score_above_ten(self):
+        self.client.force_authenticate(self.user)
+        payload = self._valid_payload()
+        payload["answers"][0]["score"] = 11
+
+        response = self.client.post(self.url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("score", str(response.data))
+
 
 class SurveyTemplateVersioningAPITestCase(APITestCase):
     def setUp(self):
