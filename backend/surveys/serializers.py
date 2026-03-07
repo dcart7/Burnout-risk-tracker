@@ -2,6 +2,8 @@ from rest_framework import serializers
 from django.db import transaction
 from django.db.models import Max
 
+from analytics.services import calculate_burnout_index_with_stability
+
 from .models import (
     Question,
     SurveyTemplate,
@@ -233,4 +235,5 @@ class WeeklySurveySubmissionSerializer(serializers.Serializer):
                 for answer in answers_data
             ]
         )
+        calculate_burnout_index_with_stability(submission)
         return submission

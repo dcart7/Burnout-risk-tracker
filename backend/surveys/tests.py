@@ -1,4 +1,5 @@
 import tempfile
+from decimal import Decimal
 from pathlib import Path
 
 from django.contrib.auth.models import Permission
@@ -9,6 +10,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from analytics.models import WeeklyScore
 from .models import Question, SurveyTemplate, SurveyTemplateQuestion, SurveySubmission, SurveyAnswer
 
 
@@ -178,6 +180,20 @@ class WeeklySurveySubmissionAPITestCase(APITestCase):
             ]
         }
 
+    def _payload_for_dimensions(self, stress, workload, motivation, energy):
+        return {
+            "answers": [
+                {"question_id": self.questions[0].id, "score": stress},
+                {"question_id": self.questions[1].id, "score": stress},
+                {"question_id": self.questions[2].id, "score": workload},
+                {"question_id": self.questions[3].id, "score": workload},
+                {"question_id": self.questions[4].id, "score": motivation},
+                {"question_id": self.questions[5].id, "score": motivation},
+                {"question_id": self.questions[6].id, "score": energy},
+                {"question_id": self.questions[7].id, "score": energy},
+            ]
+        }
+
     def test_requires_authentication(self):
         response = self.client.post(self.url, self._valid_payload(), format="json")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
@@ -205,6 +221,80 @@ class WeeklySurveySubmissionAPITestCase(APITestCase):
         self.assertLessEqual(submission.week_number, 53)
         self.assertEqual(response.data["week_number"], submission.week_number)
         self.assertEqual(SurveyAnswer.objects.filter(submission=submission).count(), 8)
+        self.assertTrue(WeeklyScore.objects.filter(submission=submission).exists())
+
+    def test_calculates_dimension_scores_and_saves_weekly_score(self):
+        self.client.force_authenticate(self.user)
+        payload = {
+            "answers": [
+                {"question_id": self.questions[0].id, "score": 2},  # stress
+                {"question_id": self.questions[1].id, "score": 6},  # stress
+                {"question_id": self.questions[2].id, "score": 4},  # workload
+                {"question_id": self.questions[3].id, "score": 8},  # workload
+                {"question_id": self.questions[4].id, "score": 10},  # motivation
+                {"question_id": self.questions[5].id, "score": 6},  # motivation
+                {"question_id": self.questions[6].id, "score": 1},  # energy
+                {"question_id": self.questions[7].id, "score": 5},  # energy
+            ]
+        }
+
+        response = self.client.post(self.url, payload, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        submission = SurveySubmission.objects.get(pk=response.data["submission_id"])
+        weekly_score = WeeklyScore.objects.get(submission=submission)
+        self.assertEqual(weekly_score.user, self.user)
+        self.assertEqual(weekly_score.week_number, submission.week_number)
+        self.assertEqual(float(weekly_score.stress), 4.0)
+        self.assertEqual(float(weekly_score.workload), 6.0)
+        self.assertEqual(float(weekly_score.motivation), 8.0)
+        self.assertEqual(float(weekly_score.energy), 3.0)
+        self.assertEqual(float(weekly_score.burnout_index), 47.0)
+        self.assertEqual(float(weekly_score.burnout_index_stable), 47.0)
+        self.assertEqual(response.data["dimension_scores_percent"]["stress"], 40.0)
+        self.assertEqual(response.data["dimension_scores_percent"]["workload"], 60.0)
+        self.assertEqual(response.data["dimension_scores_percent"]["motivation"], 80.0)
+        self.assertEqual(response.data["dimension_scores_percent"]["energy"], 30.0)
+        self.assertEqual(response.data["burnout_index_percent"], 47.0)
+        self.assertEqual(response.data["burnout_index_stable_percent"], 47.0)
+        self.assertTrue(all("score_percent" in item for item in response.data["answers"]))
+        self.assertTrue(
+            all(0.0 <= item["score_percent"] <= 100.0 for item in response.data["answers"])
+        )
+
+    def test_applies_three_week_moving_average_stability_layer(self):
+        self.client.force_authenticate(self.user)
+
+        payload_week_1 = self._payload_for_dimensions(
+            stress=10, workload=10, motivation=10, energy=10
+        )
+        payload_week_2 = self._payload_for_dimensions(
+            stress=2, workload=2, motivation=10, energy=10
+        )
+        payload_week_3 = self._payload_for_dimensions(
+            stress=10, workload=10, motivation=0, energy=0
+        )
+
+        response_1 = self.client.post(self.url, payload_week_1, format="json")
+        response_2 = self.client.post(self.url, payload_week_2, format="json")
+        response_3 = self.client.post(self.url, payload_week_3, format="json")
+
+        self.assertEqual(response_1.status_code, status.HTTP_201_CREATED, response_1.data)
+        self.assertEqual(response_2.status_code, status.HTTP_201_CREATED, response_2.data)
+        self.assertEqual(response_3.status_code, status.HTTP_201_CREATED, response_3.data)
+
+        score_1 = WeeklyScore.objects.get(submission_id=response_1.data["submission_id"])
+        score_2 = WeeklyScore.objects.get(submission_id=response_2.data["submission_id"])
+        score_3 = WeeklyScore.objects.get(submission_id=response_3.data["submission_id"])
+
+        self.assertEqual(score_1.burnout_index, Decimal("60.00"))
+        self.assertEqual(score_1.burnout_index_stable, Decimal("60.00"))
+
+        self.assertEqual(score_2.burnout_index, Decimal("12.00"))
+        self.assertEqual(score_2.burnout_index_stable, Decimal("36.00"))
+
+        self.assertEqual(score_3.burnout_index, Decimal("100.00"))
+        self.assertEqual(score_3.burnout_index_stable, Decimal("57.33"))
 
     def test_rejects_if_answers_count_is_not_8(self):
         self.client.force_authenticate(self.user)

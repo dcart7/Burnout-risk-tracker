@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+from decimal import Decimal, ROUND_HALF_UP
 
 from .models import Question, SurveyTemplate, SurveyAnswer
 from .permissions import IsHRQuestionManager, IsHRTemplateManager
@@ -13,6 +14,16 @@ from .serializers import (
     WeeklySurveySubmissionSerializer,
 )
 from users.permissions import HasRBACPermissions
+
+HUNDREDTH = Decimal("0.01")
+
+
+def as_percent_from_ten_scale(value):
+    return float((Decimal(value) * Decimal("10")).quantize(HUNDREDTH, rounding=ROUND_HALF_UP))
+
+
+def as_percent(value):
+    return float(Decimal(value).quantize(HUNDREDTH, rounding=ROUND_HALF_UP))
 
 
 class QuestionViewSet(ReadOnlyModelViewSet):
@@ -66,6 +77,7 @@ class WeeklySurveySubmissionView(APIView):
         serializer.is_valid(raise_exception=True)
         submission = serializer.save()
         answers = SurveyAnswer.objects.filter(submission=submission).select_related("question")
+        weekly_score = submission.weekly_score
 
         return Response(
             {
@@ -73,11 +85,19 @@ class WeeklySurveySubmissionView(APIView):
                 "template_id": submission.template_id,
                 "week_number": submission.week_number,
                 "submitted_at": submission.submitted_at,
+                "dimension_scores_percent": {
+                    "stress": as_percent_from_ten_scale(weekly_score.stress),
+                    "workload": as_percent_from_ten_scale(weekly_score.workload),
+                    "motivation": as_percent_from_ten_scale(weekly_score.motivation),
+                    "energy": as_percent_from_ten_scale(weekly_score.energy),
+                },
+                "burnout_index_percent": as_percent(weekly_score.burnout_index),
+                "burnout_index_stable_percent": as_percent(weekly_score.burnout_index_stable),
                 "answers": [
                     {
                         "question_id": answer.question_id,
                         "category": answer.question.category,
-                        "score": answer.score,
+                        "score_percent": as_percent_from_ten_scale(answer.score),
                     }
                     for answer in answers
                 ],
