@@ -6,7 +6,11 @@ from rest_framework.views import APIView
 from rest_framework import status
 
 from users.permissions import HasRBACPermissions
-from analytics.services import get_team_analytics_for_manager
+from analytics.services import (
+    get_company_analytics,
+    get_employee_dashboard,
+    get_team_analytics_for_manager,
+)
 
 @api_view(['GET'])
 def hello_world(request):
@@ -30,7 +34,8 @@ class EmployeeDashboardView(APIView):
     required_permissions = ("users.view_own_dashboard",)
 
     def get(self, request):
-        return Response({"detail": "Employee dashboard access granted."})
+        dashboard = get_employee_dashboard(request.user)
+        return Response(dashboard)
 
 
 class ManagerAnalyticsView(APIView):
@@ -68,3 +73,12 @@ class HRAlertPanelView(APIView):
 
     def get(self, request):
         return Response({"detail": "HR alert panel access granted."})
+
+
+class HRCompanyAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated, HasRBACPermissions]
+    required_permissions = ("users.view_company_analytics",)
+
+    def get(self, request):
+        analytics_data = get_company_analytics()
+        return Response(analytics_data)
