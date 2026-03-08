@@ -3,6 +3,7 @@ from django.db import transaction
 from django.db.models import Max
 
 from analytics.services import calculate_burnout_index_with_stability
+from alerts.tasks import generate_alerts_for_weekly_score_task
 
 from .models import (
     Question,
@@ -235,5 +236,8 @@ class WeeklySurveySubmissionSerializer(serializers.Serializer):
                 for answer in answers_data
             ]
         )
-        calculate_burnout_index_with_stability(submission)
+        weekly_score = calculate_burnout_index_with_stability(submission)
+        transaction.on_commit(
+            lambda: generate_alerts_for_weekly_score_task.delay(weekly_score.id)
+        )
         return submission

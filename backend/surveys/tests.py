@@ -1,6 +1,7 @@
 import tempfile
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
 from django.contrib.auth.models import Permission
 from django.core.management import call_command
@@ -337,10 +338,23 @@ class WeeklySurveySubmissionAPITestCase(APITestCase):
         self.client.force_authenticate(self.user)
         payload = self._valid_payload()
         payload["answers"][0]["score"] = 11
-
         response = self.client.post(self.url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("score", str(response.data))
+
+    @patch("surveys.serializers.generate_alerts_for_weekly_score_task.delay")
+    @patch("surveys.serializers.transaction.on_commit")
+    def test_triggers_background_alert_generation_after_submission(
+        self, mocked_on_commit, mocked_delay
+    ):
+        self.client.force_authenticate(self.user)
+        response = self.client.post(self.url, self._valid_payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        mocked_on_commit.assert_called_once()
+        on_commit_callback = mocked_on_commit.call_args.args[0]
+        on_commit_callback()
+        mocked_delay.assert_called_once()
 
 
 class SurveyTemplateVersioningAPITestCase(APITestCase):
