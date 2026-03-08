@@ -3,8 +3,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.decorators import permission_classes
 from rest_framework.views import APIView
+from rest_framework import status
 
 from users.permissions import HasRBACPermissions
+from analytics.services import get_team_analytics_for_manager
 
 @api_view(['GET'])
 def hello_world(request):
@@ -36,7 +38,28 @@ class ManagerAnalyticsView(APIView):
     required_permissions = ("users.view_team_analytics",)
 
     def get(self, request):
-        return Response({"detail": "Manager analytics access granted."})
+        team_id = request.query_params.get("team_id")
+        parsed_team_id = None
+        if team_id is not None:
+            try:
+                parsed_team_id = int(team_id)
+            except (TypeError, ValueError):
+                return Response(
+                    {"detail": "Query parameter 'team_id' must be an integer."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        try:
+            analytics_data = get_team_analytics_for_manager(
+                manager=request.user, team_id=parsed_team_id
+            )
+        except ValueError as error:
+            return Response(
+                {"detail": str(error)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(analytics_data)
 
 
 class HRAlertPanelView(APIView):
