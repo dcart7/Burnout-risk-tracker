@@ -85,6 +85,26 @@ cd backend
 - `GET /api/questions/pool/` - Пул активных вопросов для авторизованных пользователей.
 - `POST /api/weekly-surveys/submit/` - Отправка weekly survey (8 ответов по активному шаблону, score 0..10).
 
+### Alert System (Day 9)
+
+- При каждом новом `WeeklyScore` запускается фоновая задача генерации алертов.
+- Генерируются типы алертов:
+  - `spike`: рост `burnout_index_stable` больше 15% относительно предыдущего значения пользователя.
+  - `threshold`: `burnout_index_stable` больше 60.
+- Повторные алерты одного и того же типа для одного weekly score не дублируются.
+
+Запуск Celery worker:
+```bash
+cd backend
+celery -A core worker -l info
+```
+
+Запуск Celery beat (периодический пересчёт алертов):
+```bash
+cd backend
+celery -A core beat -l info
+```
+
 Пример `POST /api/weekly-surveys/submit/`:
 ```json
 {
