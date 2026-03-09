@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 
 from analytics.models import WeeklyScore
 from surveys.models import SurveySubmission, SurveyTemplate
@@ -35,6 +36,26 @@ class AlertGenerationTestCase(TestCase):
             template=self.template,
             week_number=15,
         )
+        return WeeklyScore.objects.create(
+            submission=submission,
+            user=self.employee,
+            week_number=15,
+            stress=Decimal("5.00"),
+            workload=Decimal("5.00"),
+            motivation=Decimal("5.00"),
+            energy=Decimal("5.00"),
+            burnout_index=Decimal(stable_index),
+            burnout_index_stable=Decimal(stable_index),
+        )
+
+    def _create_weekly_score_with_time(self, stable_index, submitted_at):
+        submission = SurveySubmission.objects.create(
+            user=self.employee,
+            template=self.template,
+            week_number=15,
+        )
+        SurveySubmission.objects.filter(pk=submission.pk).update(submitted_at=submitted_at)
+        submission.refresh_from_db()
         return WeeklyScore.objects.create(
             submission=submission,
             user=self.employee,
@@ -93,3 +114,65 @@ class AlertGenerationTestCase(TestCase):
 
         self.assertEqual(created_count, 2)
         self.assertEqual(Alert.objects.filter(weekly_score=score).count(), 2)
+
+    def test_does_not_generate_threshold_alert_at_exact_boundary_60(self):
+        score = self._create_weekly_score("60.00")
+
+        created = generate_alerts_for_weekly_score(score)
+
+        self.assertEqual(created, [])
+        self.assertFalse(Alert.objects.filter(weekly_score=score).exists())
+
+    def test_does_not_generate_spike_alert_at_exact_boundary_15_percent(self):
+        self._create_weekly_score("40.00")
+        score = self._create_weekly_score("46.00")
+
+        created = generate_alerts_for_weekly_score(score)
+
+        self.assertEqual(created, [])
+        self.assertFalse(Alert.objects.filter(weekly_score=score).exists())
+
+    def test_does_not_generate_alerts_for_null_stable_index(self):
+        submission = SurveySubmission.objects.create(
+            user=self.employee,
+            template=self.template,
+            week_number=15,
+        )
+        score = WeeklyScore.objects.create(
+            submission=submission,
+            user=self.employee,
+            week_number=15,
+            stress=Decimal("5.00"),
+            workload=Decimal("5.00"),
+            motivation=Decimal("5.00"),
+            energy=Decimal("5.00"),
+            burnout_index=Decimal("70.00"),
+            burnout_index_stable=None,
+        )
+
+        created = generate_alerts_for_weekly_score(score)
+
+        self.assertEqual(created, [])
+        self.assertFalse(Alert.objects.filter(weekly_score=score).exists())
+
+    def test_does_not_generate_spike_when_previous_value_is_zero(self):
+        self._create_weekly_score("0.00")
+        score = self._create_weekly_score("70.00")
+
+        created = generate_alerts_for_weekly_score(score)
+
+        self.assertEqual(len(created), 1)
+        alert = Alert.objects.get(weekly_score=score)
+        self.assertEqual(alert.alert_type, Alert.Type.THRESHOLD)
+        self.assertIsNone(alert.delta_percent)
+
+    def test_uses_id_fallback_for_previous_score_with_same_submitted_at(self):
+        same_time = timezone.now()
+        self._create_weekly_score_with_time("50.00", same_time)
+        score = self._create_weekly_score_with_time("70.00", same_time)
+
+        generate_alerts_for_weekly_score(score)
+
+        spike_alert = Alert.objects.get(weekly_score=score, alert_type=Alert.Type.SPIKE)
+        self.assertEqual(spike_alert.previous_value, Decimal("50.00"))
+        self.assertEqual(spike_alert.delta_percent, Decimal("40.00"))
