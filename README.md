@@ -84,6 +84,9 @@ cd backend
 - `GET /api/hello/` - Тестовый эндпоинт, возвращает "Hello from Django".
 - `GET /api/questions/pool/` - Пул активных вопросов для авторизованных пользователей.
 - `POST /api/weekly-surveys/submit/` - Отправка weekly survey (8 ответов по активному шаблону, score 0..10).
+- `GET /api/rbac/employee/dashboard/` - Личный дашборд сотрудника (тренд + радар + текущий риск).
+- `GET /api/rbac/manager/analytics/` - Агрегаты команды менеджера (с privacy rule, трендом, рисками, alert summary).
+- `GET /api/rbac/hr/company-analytics/` - Агрегаты по компании для HR (без персональных данных).
 
 ### Alert System (Day 9)
 
@@ -104,6 +107,20 @@ celery -A core worker -l info
 cd backend
 celery -A core beat -l info
 ```
+
+### RBAC доступы (Dashboard API)
+
+- Employee:
+  - `users.answer_weekly_survey`
+  - `users.view_own_dashboard`
+- Manager:
+  - `users.view_team_analytics`
+  - `users.receive_team_alerts`
+- HR:
+  - `users.manage_question_bank`
+  - `users.manage_survey_templates`
+  - `users.view_company_analytics`
+  - `users.view_alert_panel`
 
 Пример `POST /api/weekly-surveys/submit/`:
 ```json

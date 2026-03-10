@@ -1,17 +1,18 @@
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.db.models import OuterRef, Subquery
 from django.contrib.auth import get_user_model
+from django.db.models import Avg, Count, Max, OuterRef, Subquery
 
+from .cache import (
+    get_cached_company_metrics,
+    get_cached_team_analytics,
+    set_cached_company_metrics,
+    set_cached_team_analytics,
+)
 from .models import WeeklyScore
+from alerts.models import Alert
 from surveys.models import Question
 from users.models import Team
-from .cache import (
-    get_cached_team_analytics,
-    set_cached_team_analytics,
-    get_cached_company_metrics,
-    set_cached_company_metrics,
-)
 
 THREE_WEEK_WINDOW = 3
 HUNDREDTH = Decimal("0.01")
@@ -127,6 +128,8 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
 
     average_index = _calculate_average(latest_indices, team_size)
     risk_distribution = _build_risk_distribution(latest_indices, team_size)
+    trend = _build_team_trend(team)
+    alert_summary = _build_alert_summary(Alert.objects.filter(team=team))
 
     data = {
         "is_hidden": False,
@@ -135,54 +138,11 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
         "team_size": team_size,
         "avg_burnout_index": float(average_index),
         "risk_distribution": risk_distribution,
+        "trend": trend,
+        "alert_summary": alert_summary,
     }
     set_cached_team_analytics(team.id, data)
     return data
-
-
-def get_company_metrics(min_company_size=MIN_COMPANY_SIZE):
-    cached = get_cached_company_metrics()
-    if cached is not None:
-        return cached
-
-    user_model = get_user_model()
-    latest_score_subquery = (
-        WeeklyScore.objects.filter(user=OuterRef("pk"), burnout_index_stable__isnull=False)
-        .order_by("-submission__submitted_at", "-id")
-        .values("burnout_index_stable")[:1]
-    )
-    latest_indices = list(
-        user_model.objects.annotate(latest_burnout_index=Subquery(latest_score_subquery))
-        .filter(latest_burnout_index__isnull=False)
-        .values_list("latest_burnout_index", flat=True)
-    )
-    total_users = len(latest_indices)
-
-    if total_users < min_company_size:
-        data = {
-            "is_hidden": True,
-            "reason": "not_enough_data",
-            "min_required": min_company_size,
-            "company_size": total_users,
-        }
-        set_cached_company_metrics(data)
-        return data
-
-    average_index = _calculate_average(latest_indices, total_users)
-    risk_distribution = _build_risk_distribution(latest_indices, total_users)
-
-    data = {
-        "is_hidden": False,
-        "company_size": total_users,
-        "avg_burnout_index": float(average_index),
-        "risk_distribution": risk_distribution,
-    }
-    set_cached_company_metrics(data)
-    return data
-
-
-def get_company_analytics(min_company_size=MIN_COMPANY_SIZE):
-    return get_company_metrics(min_company_size=min_company_size)
 
 
 def get_employee_dashboard(user, trend_weeks=8):
@@ -223,6 +183,76 @@ def get_employee_dashboard(user, trend_weeks=8):
     }
 
 
+def get_company_analytics(min_company_size=MIN_COMPANY_SIZE):
+    cached = get_cached_company_metrics()
+    if cached is not None:
+        return cached
+
+    user_model = get_user_model()
+    latest_score_subquery = (
+        WeeklyScore.objects.filter(user=OuterRef("pk"), burnout_index_stable__isnull=False)
+        .order_by("-submission__submitted_at", "-id")
+        .values("burnout_index_stable")[:1]
+    )
+    company_indices = list(
+        user_model.objects.filter(role=user_model.Role.EMPLOYEE)
+        .annotate(latest_burnout_index=Subquery(latest_score_subquery))
+        .filter(latest_burnout_index__isnull=False)
+        .values_list("latest_burnout_index", flat=True)
+    )
+    company_size = len(company_indices)
+    if company_size < min_company_size:
+        data = {
+            "is_hidden": True,
+            "reason": "not_enough_data",
+            "min_required": min_company_size,
+            "company_size": company_size,
+        }
+        set_cached_company_metrics(data)
+        return data
+
+    employee_scores = WeeklyScore.objects.filter(
+        user__role=user_model.Role.EMPLOYEE,
+        burnout_index_stable__isnull=False,
+    )
+    team_breakdown = (
+        employee_scores.values("user__team_id", "user__team__name")
+        .annotate(
+            avg_burnout_index=Avg("burnout_index_stable"),
+            sample_size=Count("id"),
+        )
+        .order_by("user__team_id")
+    )
+
+    data = {
+        "is_hidden": False,
+        "company_size": company_size,
+        "avg_burnout_index": float(_calculate_average(company_indices, company_size)),
+        "risk_distribution": _build_risk_distribution(company_indices, company_size),
+        "trend": _build_company_trend(employee_scores),
+        "alert_summary": _build_alert_summary(Alert.objects.all()),
+        "team_breakdown": [
+            {
+                "team_id": row["user__team_id"],
+                "team_name": row["user__team__name"] or "Unassigned",
+                "avg_burnout_index": float(
+                    Decimal(row["avg_burnout_index"]).quantize(
+                        HUNDREDTH, rounding=ROUND_HALF_UP
+                    )
+                ),
+                "sample_size": row["sample_size"],
+            }
+            for row in team_breakdown
+        ],
+    }
+    set_cached_company_metrics(data)
+    return data
+
+
+def get_company_metrics(min_company_size=MIN_COMPANY_SIZE):
+    return get_company_analytics(min_company_size=min_company_size)
+
+
 def _calculate_average(values, total):
     total_index = sum((Decimal(value) for value in values), Decimal("0"))
     return (total_index / Decimal(total)).quantize(HUNDREDTH, rounding=ROUND_HALF_UP)
@@ -253,3 +283,71 @@ def _classify_risk(index):
     if index < HIGH_RISK_LOWER_BOUND:
         return "medium"
     return "high"
+
+
+def _build_team_trend(team, trend_weeks=8):
+    trend_rows = list(
+        WeeklyScore.objects.filter(user__team=team, burnout_index_stable__isnull=False)
+        .values("week_number")
+        .annotate(
+            avg_burnout_index=Avg("burnout_index_stable"),
+            sample_size=Count("id"),
+            latest_submission=Max("submission__submitted_at"),
+        )
+        .order_by("-latest_submission")[:trend_weeks]
+    )
+    trend_rows.reverse()
+    return [
+        {
+            "week_number": row["week_number"],
+            "avg_burnout_index": float(
+                Decimal(row["avg_burnout_index"]).quantize(HUNDREDTH, rounding=ROUND_HALF_UP)
+            ),
+            "sample_size": row["sample_size"],
+        }
+        for row in trend_rows
+    ]
+
+
+def _build_company_trend(employee_scores, trend_weeks=8):
+    trend_rows = list(
+        employee_scores.values("week_number")
+        .annotate(
+            avg_burnout_index=Avg("burnout_index_stable"),
+            sample_size=Count("id"),
+            latest_submission=Max("submission__submitted_at"),
+        )
+        .order_by("-latest_submission")[:trend_weeks]
+    )
+    trend_rows.reverse()
+    return [
+        {
+            "week_number": row["week_number"],
+            "avg_burnout_index": float(
+                Decimal(row["avg_burnout_index"]).quantize(HUNDREDTH, rounding=ROUND_HALF_UP)
+            ),
+            "sample_size": row["sample_size"],
+        }
+        for row in trend_rows
+    ]
+
+
+def _build_alert_summary(alert_queryset):
+    counts = alert_queryset.values("status", "alert_type").annotate(total=Count("id"))
+    summary = {
+        "total": 0,
+        "by_status": {
+            Alert.Status.NEW: 0,
+            Alert.Status.ACKNOWLEDGED: 0,
+            Alert.Status.RESOLVED: 0,
+        },
+        "by_type": {
+            Alert.Type.SPIKE: 0,
+            Alert.Type.THRESHOLD: 0,
+        },
+    }
+    for row in counts:
+        summary["total"] += row["total"]
+        summary["by_status"][row["status"]] += row["total"]
+        summary["by_type"][row["alert_type"]] += row["total"]
+    return summary

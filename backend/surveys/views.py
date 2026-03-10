@@ -78,29 +78,30 @@ class WeeklySurveySubmissionView(APIView):
         submission = serializer.save()
         answers = SurveyAnswer.objects.filter(submission=submission).select_related("question")
         weekly_score = submission.weekly_score
-
-        return Response(
-            {
-                "submission_id": submission.id,
-                "template_id": submission.template_id,
-                "week_number": submission.week_number,
-                "submitted_at": submission.submitted_at,
-                "dimension_scores_percent": {
-                    "stress": as_percent_from_ten_scale(weekly_score.stress),
-                    "workload": as_percent_from_ten_scale(weekly_score.workload),
-                    "motivation": as_percent_from_ten_scale(weekly_score.motivation),
-                    "energy": as_percent_from_ten_scale(weekly_score.energy),
-                },
-                "burnout_index_percent": as_percent(weekly_score.burnout_index),
-                "burnout_index_stable_percent": as_percent(weekly_score.burnout_index_stable),
-                "answers": [
-                    {
-                        "question_id": answer.question_id,
-                        "category": answer.question.category,
-                        "score_percent": as_percent_from_ten_scale(answer.score),
-                    }
-                    for answer in answers
-                ],
+        response_payload = {
+            "submission_id": submission.id,
+            "template_id": submission.template_id,
+            "week_number": submission.week_number,
+            "submitted_at": submission.submitted_at,
+            "dimension_scores_percent": {
+                "stress": as_percent_from_ten_scale(weekly_score.stress),
+                "workload": as_percent_from_ten_scale(weekly_score.workload),
+                "motivation": as_percent_from_ten_scale(weekly_score.motivation),
+                "energy": as_percent_from_ten_scale(weekly_score.energy),
             },
-            status=status.HTTP_201_CREATED,
-        )
+            "burnout_index_percent": as_percent(weekly_score.burnout_index),
+            "burnout_index_stable_percent": as_percent(weekly_score.burnout_index_stable),
+        }
+
+        include_answers = request.query_params.get("include_answers") == "true"
+        if include_answers and request.user.has_perm("users.view_raw_answers"):
+            response_payload["answers"] = [
+                {
+                    "question_id": answer.question_id,
+                    "category": answer.question.category,
+                    "score_percent": as_percent_from_ten_scale(answer.score),
+                }
+                for answer in answers
+            ]
+
+        return Response(response_payload, status=status.HTTP_201_CREATED)

@@ -7,13 +7,13 @@ from rest_framework import status
 
 from users.permissions import HasRBACPermissions
 from analytics.services import (
-    get_team_analytics_for_manager,
-    get_company_metrics,
     get_company_analytics,
     get_employee_dashboard,
+    get_team_analytics_for_manager,
 )
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def hello_world(request):
     return Response({"message": "Hello from Django!"})
 
@@ -90,5 +90,5 @@ class CompanyMetricsView(APIView):
     required_permissions = ("users.view_company_analytics",)
 
     def get(self, request):
-        metrics = get_company_metrics()
+        metrics = get_company_analytics()
         return Response(metrics)

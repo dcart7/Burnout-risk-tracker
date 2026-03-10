@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     EmployeeDashboardView,
+    HRCompanyAnalyticsView,
     HRAlertPanelView,
     HRCompanyAnalyticsView,
     CompanyMetricsView,
