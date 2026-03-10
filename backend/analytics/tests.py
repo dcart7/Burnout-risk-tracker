@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 
@@ -9,6 +10,13 @@ from surveys.models import Question, SurveyAnswer, SurveySubmission, SurveyTempl
 from users.models import Team
 
 from .models import WeeklyScore
+from .cache import (
+    set_cached_team_analytics,
+    set_cached_company_metrics,
+    get_cached_team_analytics,
+    get_cached_company_metrics,
+    invalidate_analytics_cache_for_submission,
+)
 from .services import (
     apply_stability_layer,
     calculate_burnout_index,
@@ -167,3 +175,18 @@ class AnalyticsServicesUnitTestCase(TestCase):
         stable_value = apply_stability_layer(newest)
 
         self.assertEqual(stable_value, Decimal("36.00"))
+
+    def test_invalidate_analytics_cache_for_submission(self):
+        cache.clear()
+        submission = SurveySubmission.objects.create(
+            user=self.employee,
+            template=self.template,
+            week_number=14,
+        )
+        set_cached_team_analytics(self.team.id, {"stub": True})
+        set_cached_company_metrics({"stub": True})
+
+        invalidate_analytics_cache_for_submission(submission)
+
+        self.assertIsNone(get_cached_team_analytics(self.team.id))
+        self.assertIsNone(get_cached_company_metrics())

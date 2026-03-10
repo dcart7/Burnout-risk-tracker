@@ -1,14 +1,22 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import OuterRef, Subquery
+from django.contrib.auth import get_user_model
 
 from .models import WeeklyScore
 from surveys.models import Question
 from users.models import Team
+from .cache import (
+    get_cached_team_analytics,
+    set_cached_team_analytics,
+    get_cached_company_metrics,
+    set_cached_company_metrics,
+)
 
 THREE_WEEK_WINDOW = 3
 HUNDREDTH = Decimal("0.01")
 MIN_TEAM_SIZE = 3
+MIN_COMPANY_SIZE = 3
 LOW_RISK_UPPER_BOUND = Decimal("30")
 HIGH_RISK_LOWER_BOUND = Decimal("60")
 
@@ -88,6 +96,10 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
     if not team:
         raise ValueError("Team not found or not managed by this manager.")
 
+    cached = get_cached_team_analytics(team.id)
+    if cached is not None:
+        return cached
+
     latest_score_subquery = (
         WeeklyScore.objects.filter(user=OuterRef("pk"), burnout_index_stable__isnull=False)
         .order_by("-submission__submitted_at", "-id")
@@ -101,7 +113,7 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
     team_size = len(latest_indices)
 
     if team_size < min_team_size:
-        return {
+        data = {
             "is_hidden": True,
             "reason": "not_enough_data",
             "min_required": min_team_size,
@@ -109,6 +121,8 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
             "team_name": team.name,
             "team_size": team_size,
         }
+        set_cached_team_analytics(team.id, data)
+        return data
 
     total_index = sum((Decimal(index) for index in latest_indices), Decimal("0"))
     average_index = (total_index / Decimal(team_size)).quantize(
@@ -132,7 +146,7 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
         )
         risk_distribution[risk_level] = {"count": count, "percent": float(percentage)}
 
-    return {
+    data = {
         "is_hidden": False,
         "team_id": team.id,
         "team_name": team.name,
@@ -140,3 +154,65 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
         "avg_burnout_index": float(average_index),
         "risk_distribution": risk_distribution,
     }
+    set_cached_team_analytics(team.id, data)
+    return data
+
+
+def get_company_metrics(min_company_size=MIN_COMPANY_SIZE):
+    cached = get_cached_company_metrics()
+    if cached is not None:
+        return cached
+
+    user_model = get_user_model()
+    latest_score_subquery = (
+        WeeklyScore.objects.filter(user=OuterRef("pk"), burnout_index_stable__isnull=False)
+        .order_by("-submission__submitted_at", "-id")
+        .values("burnout_index_stable")[:1]
+    )
+    latest_indices = list(
+        user_model.objects.annotate(latest_burnout_index=Subquery(latest_score_subquery))
+        .filter(latest_burnout_index__isnull=False)
+        .values_list("latest_burnout_index", flat=True)
+    )
+    total_users = len(latest_indices)
+
+    if total_users < min_company_size:
+        data = {
+            "is_hidden": True,
+            "reason": "not_enough_data",
+            "min_required": min_company_size,
+            "company_size": total_users,
+        }
+        set_cached_company_metrics(data)
+        return data
+
+    total_index = sum((Decimal(index) for index in latest_indices), Decimal("0"))
+    average_index = (total_index / Decimal(total_users)).quantize(
+        HUNDREDTH, rounding=ROUND_HALF_UP
+    )
+
+    risk_counts = {"low": 0, "medium": 0, "high": 0}
+    for index in latest_indices:
+        index_decimal = Decimal(index)
+        if index_decimal < LOW_RISK_UPPER_BOUND:
+            risk_counts["low"] += 1
+        elif index_decimal < HIGH_RISK_LOWER_BOUND:
+            risk_counts["medium"] += 1
+        else:
+            risk_counts["high"] += 1
+
+    risk_distribution = {}
+    for risk_level, count in risk_counts.items():
+        percentage = (Decimal(count) * Decimal("100") / Decimal(total_users)).quantize(
+            HUNDREDTH, rounding=ROUND_HALF_UP
+        )
+        risk_distribution[risk_level] = {"count": count, "percent": float(percentage)}
+
+    data = {
+        "is_hidden": False,
+        "company_size": total_users,
+        "avg_burnout_index": float(average_index),
+        "risk_distribution": risk_distribution,
+    }
+    set_cached_company_metrics(data)
+    return data
