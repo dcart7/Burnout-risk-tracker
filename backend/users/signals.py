@@ -18,6 +18,7 @@ ROLE_PERMISSIONS = {
         "manage_survey_templates",
         "view_company_analytics",
         "view_alert_panel",
+        "view_raw_answers",
         "add_team",
         "change_team",
         "delete_team",

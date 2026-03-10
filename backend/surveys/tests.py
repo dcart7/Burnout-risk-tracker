@@ -226,6 +226,8 @@ class WeeklySurveySubmissionAPITestCase(APITestCase):
 
     def test_calculates_dimension_scores_and_saves_weekly_score(self):
         self.client.force_authenticate(self.user)
+        raw_answers_permission = Permission.objects.get(codename="view_raw_answers")
+        self.user.user_permissions.add(raw_answers_permission)
         payload = {
             "answers": [
                 {"question_id": self.questions[0].id, "score": 2},  # stress
@@ -239,7 +241,7 @@ class WeeklySurveySubmissionAPITestCase(APITestCase):
             ]
         }
 
-        response = self.client.post(self.url, payload, format="json")
+        response = self.client.post(f"{self.url}?include_answers=true", payload, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         submission = SurveySubmission.objects.get(pk=response.data["submission_id"])
@@ -262,6 +264,13 @@ class WeeklySurveySubmissionAPITestCase(APITestCase):
         self.assertTrue(
             all(0.0 <= item["score_percent"] <= 100.0 for item in response.data["answers"])
         )
+
+    def test_hides_raw_answers_without_permission(self):
+        self.client.force_authenticate(self.user)
+        response = self.client.post(self.url, self._valid_payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertNotIn("answers", response.data)
 
     def test_applies_three_week_moving_average_stability_layer(self):
         self.client.force_authenticate(self.user)

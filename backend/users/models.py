@@ -68,6 +68,7 @@ class User(AbstractUser):
             ("manage_survey_templates", "Can manage survey templates"),
             ("view_company_analytics", "Can view company analytics"),
             ("view_alert_panel", "Can view alert panel"),
+            ("view_raw_answers", "Can view raw survey answers"),
         )
 
     def __str__(self):

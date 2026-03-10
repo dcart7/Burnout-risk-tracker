@@ -14,6 +14,7 @@ from analytics.services import (
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def hello_world(request):
     return Response({"message": "Hello from Django!"})
 
