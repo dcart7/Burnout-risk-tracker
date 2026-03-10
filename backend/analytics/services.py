@@ -2,14 +2,21 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Avg, Count, Max, OuterRef, Subquery
 
+from .cache import (
+    get_cached_company_metrics,
+    get_cached_team_analytics,
+    set_cached_company_metrics,
+    set_cached_team_analytics,
+)
 from .models import WeeklyScore
+from alerts.models import Alert
 from surveys.models import Question
 from users.models import Team, User
-from alerts.models import Alert
 
 THREE_WEEK_WINDOW = 3
 HUNDREDTH = Decimal("0.01")
 MIN_TEAM_SIZE = 3
+MIN_COMPANY_SIZE = 3
 LOW_RISK_UPPER_BOUND = Decimal("30")
 HIGH_RISK_LOWER_BOUND = Decimal("60")
 HUNDRED = Decimal("100")
@@ -90,6 +97,10 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
     if not team:
         raise ValueError("Team not found or not managed by this manager.")
 
+    cached = get_cached_team_analytics(team.id)
+    if cached is not None:
+        return cached
+
     latest_score_subquery = (
         WeeklyScore.objects.filter(user=OuterRef("pk"), burnout_index_stable__isnull=False)
         .order_by("-submission__submitted_at", "-id")
@@ -103,7 +114,7 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
     team_size = len(latest_indices)
 
     if team_size < min_team_size:
-        return {
+        data = {
             "is_hidden": True,
             "reason": "not_enough_data",
             "min_required": min_team_size,
@@ -111,13 +122,15 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
             "team_name": team.name,
             "team_size": team_size,
         }
+        set_cached_team_analytics(team.id, data)
+        return data
 
     average_index = _calculate_average(latest_indices)
     risk_distribution = _build_risk_distribution(latest_indices, team_size)
     trend = _build_team_trend(team)
     alert_summary = _build_alert_summary(Alert.objects.filter(team=team))
 
-    return {
+    data = {
         "is_hidden": False,
         "team_id": team.id,
         "team_name": team.name,
@@ -127,6 +140,8 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
         "trend": trend,
         "alert_summary": alert_summary,
     }
+    set_cached_team_analytics(team.id, data)
+    return data
 
 
 def get_employee_dashboard(user, trend_weeks=8):
@@ -167,7 +182,11 @@ def get_employee_dashboard(user, trend_weeks=8):
     }
 
 
-def get_company_analytics(min_company_size=MIN_TEAM_SIZE):
+def get_company_analytics(min_company_size=MIN_COMPANY_SIZE):
+    cached = get_cached_company_metrics()
+    if cached is not None:
+        return cached
+
     latest_score_subquery = (
         WeeklyScore.objects.filter(user=OuterRef("pk"), burnout_index_stable__isnull=False)
         .order_by("-submission__submitted_at", "-id")
@@ -181,12 +200,14 @@ def get_company_analytics(min_company_size=MIN_TEAM_SIZE):
     )
     company_size = len(company_indices)
     if company_size < min_company_size:
-        return {
+        data = {
             "is_hidden": True,
             "reason": "not_enough_data",
             "min_required": min_company_size,
             "company_size": company_size,
         }
+        set_cached_company_metrics(data)
+        return data
 
     employee_scores = WeeklyScore.objects.filter(
         user__role=User.Role.EMPLOYEE,
@@ -201,7 +222,7 @@ def get_company_analytics(min_company_size=MIN_TEAM_SIZE):
         .order_by("user__team_id")
     )
 
-    return {
+    data = {
         "is_hidden": False,
         "company_size": company_size,
         "avg_burnout_index": _calculate_average(company_indices),
@@ -222,6 +243,8 @@ def get_company_analytics(min_company_size=MIN_TEAM_SIZE):
             for row in team_breakdown
         ],
     }
+    set_cached_company_metrics(data)
+    return data
 
 
 def _to_percent(score):

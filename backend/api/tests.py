@@ -279,3 +279,77 @@ class HRCompanyAnalyticsAPITestCase(APITestCase):
         self.client.force_authenticate(user_without_permission)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class CompanyMetricsAPITestCase(APITestCase):
+    def setUp(self):
+        self.url = reverse("company_metrics")
+        self.user_model = get_user_model()
+        self.hr_user = self.user_model.objects.create_user(
+            username="company_hr",
+            password="test-pass-123",
+            role=self.user_model.Role.HR,
+        )
+        permission = Permission.objects.get(codename="view_company_analytics")
+        self.hr_user.user_permissions.add(permission)
+
+        self.template = SurveyTemplate.objects.create(version=998, is_active=False)
+
+    def _create_employee(self, username):
+        return self.user_model.objects.create_user(
+            username=username,
+            password="test-pass-123",
+            role=self.user_model.Role.EMPLOYEE,
+        )
+
+    def _create_weekly_score(self, user, stable_index, submitted_at=None):
+        submission = SurveySubmission.objects.create(
+            user=user,
+            template=self.template,
+            week_number=9,
+        )
+        if submitted_at is not None:
+            SurveySubmission.objects.filter(pk=submission.pk).update(submitted_at=submitted_at)
+
+        return WeeklyScore.objects.create(
+            submission=submission,
+            user=user,
+            week_number=9,
+            stress=Decimal("5.00"),
+            workload=Decimal("5.00"),
+            motivation=Decimal("5.00"),
+            energy=Decimal("5.00"),
+            burnout_index=Decimal(stable_index),
+            burnout_index_stable=Decimal(stable_index),
+        )
+
+    def test_requires_authentication(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_requires_view_company_analytics_permission(self):
+        user_without_permission = self.user_model.objects.create_user(
+            username="no_company_permission",
+            password="test-pass-123",
+        )
+        self.client.force_authenticate(user_without_permission)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_returns_company_metrics(self):
+        employee_1 = self._create_employee("company_low")
+        employee_2 = self._create_employee("company_medium")
+        employee_3 = self._create_employee("company_high")
+        self._create_weekly_score(employee_1, "20.00")
+        self._create_weekly_score(employee_2, "45.00")
+        self._create_weekly_score(employee_3, "70.00")
+
+        self.client.force_authenticate(self.hr_user)
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertFalse(response.data["is_hidden"])
+        self.assertEqual(response.data["company_size"], 3)
+        self.assertEqual(response.data["risk_distribution"]["low"]["count"], 1)
+        self.assertEqual(response.data["risk_distribution"]["medium"]["count"], 1)
+        self.assertEqual(response.data["risk_distribution"]["high"]["count"], 1)

@@ -12,6 +12,7 @@ from analytics.services import (
     get_team_analytics_for_manager,
 )
 
+
 @api_view(['GET'])
 def hello_world(request):
     return Response({"message": "Hello from Django!"})
@@ -82,3 +83,12 @@ class HRCompanyAnalyticsView(APIView):
     def get(self, request):
         analytics_data = get_company_analytics()
         return Response(analytics_data)
+
+
+class CompanyMetricsView(APIView):
+    permission_classes = [IsAuthenticated, HasRBACPermissions]
+    required_permissions = ("users.view_company_analytics",)
+
+    def get(self, request):
+        metrics = get_company_analytics()
+        return Response(metrics)

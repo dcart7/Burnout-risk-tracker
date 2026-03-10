@@ -351,9 +351,10 @@ class WeeklySurveySubmissionAPITestCase(APITestCase):
         response = self.client.post(self.url, self._valid_payload(), format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        mocked_on_commit.assert_called_once()
-        on_commit_callback = mocked_on_commit.call_args.args[0]
-        on_commit_callback()
+        self.assertEqual(mocked_on_commit.call_count, 2)
+        for call_args in mocked_on_commit.call_args_list:
+            on_commit_callback = call_args.args[0]
+            on_commit_callback()
         mocked_delay.assert_called_once()
 
 
