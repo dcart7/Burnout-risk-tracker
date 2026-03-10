@@ -19,6 +19,7 @@ MIN_TEAM_SIZE = 3
 MIN_COMPANY_SIZE = 3
 LOW_RISK_UPPER_BOUND = Decimal("30")
 HIGH_RISK_LOWER_BOUND = Decimal("60")
+HUNDRED = Decimal("100")
 
 
 def calculate_dimension_scores(submission):
@@ -124,27 +125,8 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
         set_cached_team_analytics(team.id, data)
         return data
 
-    total_index = sum((Decimal(index) for index in latest_indices), Decimal("0"))
-    average_index = (total_index / Decimal(team_size)).quantize(
-        HUNDREDTH, rounding=ROUND_HALF_UP
-    )
-
-    risk_counts = {"low": 0, "medium": 0, "high": 0}
-    for index in latest_indices:
-        index_decimal = Decimal(index)
-        if index_decimal < LOW_RISK_UPPER_BOUND:
-            risk_counts["low"] += 1
-        elif index_decimal < HIGH_RISK_LOWER_BOUND:
-            risk_counts["medium"] += 1
-        else:
-            risk_counts["high"] += 1
-
-    risk_distribution = {}
-    for risk_level, count in risk_counts.items():
-        percentage = (Decimal(count) * Decimal("100") / Decimal(team_size)).quantize(
-            HUNDREDTH, rounding=ROUND_HALF_UP
-        )
-        risk_distribution[risk_level] = {"count": count, "percent": float(percentage)}
+    average_index = _calculate_average(latest_indices, team_size)
+    risk_distribution = _build_risk_distribution(latest_indices, team_size)
 
     data = {
         "is_hidden": False,
@@ -186,27 +168,8 @@ def get_company_metrics(min_company_size=MIN_COMPANY_SIZE):
         set_cached_company_metrics(data)
         return data
 
-    total_index = sum((Decimal(index) for index in latest_indices), Decimal("0"))
-    average_index = (total_index / Decimal(total_users)).quantize(
-        HUNDREDTH, rounding=ROUND_HALF_UP
-    )
-
-    risk_counts = {"low": 0, "medium": 0, "high": 0}
-    for index in latest_indices:
-        index_decimal = Decimal(index)
-        if index_decimal < LOW_RISK_UPPER_BOUND:
-            risk_counts["low"] += 1
-        elif index_decimal < HIGH_RISK_LOWER_BOUND:
-            risk_counts["medium"] += 1
-        else:
-            risk_counts["high"] += 1
-
-    risk_distribution = {}
-    for risk_level, count in risk_counts.items():
-        percentage = (Decimal(count) * Decimal("100") / Decimal(total_users)).quantize(
-            HUNDREDTH, rounding=ROUND_HALF_UP
-        )
-        risk_distribution[risk_level] = {"count": count, "percent": float(percentage)}
+    average_index = _calculate_average(latest_indices, total_users)
+    risk_distribution = _build_risk_distribution(latest_indices, total_users)
 
     data = {
         "is_hidden": False,
@@ -216,3 +179,77 @@ def get_company_metrics(min_company_size=MIN_COMPANY_SIZE):
     }
     set_cached_company_metrics(data)
     return data
+
+
+def get_company_analytics(min_company_size=MIN_COMPANY_SIZE):
+    return get_company_metrics(min_company_size=min_company_size)
+
+
+def get_employee_dashboard(user, trend_weeks=8):
+    scores = (
+        WeeklyScore.objects.filter(user=user, burnout_index_stable__isnull=False)
+        .select_related("submission")
+        .order_by("-submission__submitted_at", "-id")
+    )
+    latest_score = scores.first()
+    if latest_score is None:
+        return {
+            "current_index": None,
+            "risk_level": None,
+            "trend": [],
+            "radar": None,
+        }
+
+    trend_scores = list(scores[:trend_weeks])
+    trend_scores.reverse()
+
+    return {
+        "current_index": float(latest_score.burnout_index_stable),
+        "risk_level": _classify_risk(Decimal(latest_score.burnout_index_stable)),
+        "trend": [
+            {
+                "week_number": score.week_number,
+                "burnout_index": float(score.burnout_index_stable),
+                "submitted_at": score.submission.submitted_at,
+            }
+            for score in trend_scores
+        ],
+        "radar": {
+            "stress": _to_percent(latest_score.stress),
+            "workload": _to_percent(latest_score.workload),
+            "motivation": _to_percent(latest_score.motivation),
+            "energy": _to_percent(latest_score.energy),
+        },
+    }
+
+
+def _calculate_average(values, total):
+    total_index = sum((Decimal(value) for value in values), Decimal("0"))
+    return (total_index / Decimal(total)).quantize(HUNDREDTH, rounding=ROUND_HALF_UP)
+
+
+def _build_risk_distribution(values, total):
+    risk_counts = {"low": 0, "medium": 0, "high": 0}
+    for value in values:
+        risk_counts[_classify_risk(Decimal(value))] += 1
+
+    risk_distribution = {}
+    for risk_level, count in risk_counts.items():
+        percentage = (Decimal(count) * HUNDRED / Decimal(total)).quantize(
+            HUNDREDTH, rounding=ROUND_HALF_UP
+        )
+        risk_distribution[risk_level] = {"count": count, "percent": float(percentage)}
+
+    return risk_distribution
+
+
+def _to_percent(score):
+    return float((Decimal(score) * Decimal("10")).quantize(HUNDREDTH, rounding=ROUND_HALF_UP))
+
+
+def _classify_risk(index):
+    if index < LOW_RISK_UPPER_BOUND:
+        return "low"
+    if index < HIGH_RISK_LOWER_BOUND:
+        return "medium"
+    return "high"
