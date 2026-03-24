@@ -3,15 +3,16 @@ from .views import (
     EmployeeDashboardView,
     HRCompanyAnalyticsView,
     HRAlertPanelView,
-    HRCompanyAnalyticsView,
     CompanyMetricsView,
     ManagerAnalyticsView,
     hello_world,
+    health,
     me,
 )
 
 urlpatterns = [
     path('hello/', hello_world, name='hello_world'),
+    path('health/', health, name='health'),
     path('me/', me, name='me'),
     path('rbac/employee/dashboard/', EmployeeDashboardView.as_view(), name='employee_dashboard'),
     path('rbac/manager/analytics/', ManagerAnalyticsView.as_view(), name='manager_analytics'),

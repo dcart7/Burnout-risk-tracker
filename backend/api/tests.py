@@ -189,6 +189,8 @@ class EmployeeDashboardAPITestCase(APITestCase):
         self.assertIn("weather_summary", response.data)
         self.assertIn("current", response.data["weather_summary"])
         self.assertIn("recommendation", response.data["weather_summary"])
+        self.assertIn("persona_card", response.data)
+        self.assertEqual(response.data["persona_card"]["risk_level"], "medium")
 
     def test_requires_employee_dashboard_permission(self):
         no_permission_user = self.user_model.objects.create_user(

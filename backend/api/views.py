@@ -1,3 +1,4 @@
+from django.db import connection
 from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -16,6 +17,16 @@ from analytics.services import (
 @permission_classes([IsAuthenticated])
 def hello_world(request):
     return Response({"message": "Hello from Django!"})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def health(request):
+    try:
+        connection.ensure_connection()
+    except Exception:
+        return Response({"status": "unhealthy"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return Response({"status": "ok"})
 
 
 @api_view(['GET'])

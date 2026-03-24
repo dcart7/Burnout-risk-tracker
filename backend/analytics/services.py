@@ -160,6 +160,7 @@ def get_employee_dashboard(user, trend_weeks=8, weather_location=None):
             "trend": [],
             "radar": None,
             "weather_summary": _build_weather_summary(None, [], weather_location),
+            "persona_card": _build_persona_card(None, []),
         }
 
     trend_scores = list(scores[:trend_weeks])
@@ -183,6 +184,7 @@ def get_employee_dashboard(user, trend_weeks=8, weather_location=None):
             "energy": _to_percent(latest_score.energy),
         },
         "weather_summary": _build_weather_summary(latest_score, trend_scores, weather_location),
+        "persona_card": _build_persona_card(latest_score, trend_scores),
     }
 
 
@@ -340,6 +342,69 @@ def _build_weather_summary(latest_score, trend_scores, weather_location):
         "signals": signals,
         "weather_sensitivity": _build_weather_sensitivity(trend_scores),
     }
+
+
+def _build_persona_card(latest_score, trend_scores):
+    trend_signal = _derive_trend_signal(trend_scores)
+    recovery = _calculate_recovery_rate(trend_scores)
+
+    if latest_score is None:
+        return {
+            "risk_level": None,
+            "recovery_rate": recovery,
+            "stress_trigger_category": None,
+            "trend_arrow": trend_signal["status"],
+        }
+
+    return {
+        "risk_level": _classify_risk(Decimal(latest_score.burnout_index_stable)),
+        "recovery_rate": recovery,
+        "stress_trigger_category": _stress_trigger_category(latest_score),
+        "trend_arrow": trend_signal["status"],
+    }
+
+
+def _calculate_recovery_rate(trend_scores):
+    if len(trend_scores) < 2:
+        return {
+            "value": None,
+            "direction": "insufficient_data",
+            "unit": "points_per_week",
+        }
+
+    first = Decimal(trend_scores[0].burnout_index_stable)
+    last = Decimal(trend_scores[-1].burnout_index_stable)
+    weeks = max(1, len(trend_scores) - 1)
+    rate = ((first - last) / Decimal(weeks)).quantize(HUNDREDTH, rounding=ROUND_HALF_UP)
+
+    if rate > 0:
+        direction = "improving"
+    elif rate < 0:
+        direction = "worsening"
+    else:
+        direction = "stable"
+
+    return {
+        "value": float(rate),
+        "direction": direction,
+        "unit": "points_per_week",
+    }
+
+
+def _stress_trigger_category(latest_score):
+    # Higher stress/workload increases risk, lower motivation/energy increases risk.
+    stress = _to_percent(latest_score.stress)
+    workload = _to_percent(latest_score.workload)
+    motivation = _to_percent(latest_score.motivation)
+    energy = _to_percent(latest_score.energy)
+
+    trigger_scores = {
+        "stress": stress,
+        "workload": workload,
+        "motivation": 100 - motivation,
+        "energy": 100 - energy,
+    }
+    return max(trigger_scores, key=trigger_scores.get)
 
 
 def _weather_payload(weather):
