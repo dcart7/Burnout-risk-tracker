@@ -10,6 +10,7 @@ from .cache import (
     set_cached_team_analytics,
 )
 from .models import WeeklyScore
+from .weather import get_current_weather
 from alerts.models import Alert
 from surveys.models import Question
 from users.models import Team
@@ -145,7 +146,7 @@ def get_team_analytics_for_manager(manager, team_id=None, min_team_size=MIN_TEAM
     return data
 
 
-def get_employee_dashboard(user, trend_weeks=8):
+def get_employee_dashboard(user, trend_weeks=8, weather_location=None):
     scores = (
         WeeklyScore.objects.filter(user=user, burnout_index_stable__isnull=False)
         .select_related("submission")
@@ -158,6 +159,7 @@ def get_employee_dashboard(user, trend_weeks=8):
             "risk_level": None,
             "trend": [],
             "radar": None,
+            "weather_summary": _build_weather_summary(None, [], weather_location),
         }
 
     trend_scores = list(scores[:trend_weeks])
@@ -180,6 +182,7 @@ def get_employee_dashboard(user, trend_weeks=8):
             "motivation": _to_percent(latest_score.motivation),
             "energy": _to_percent(latest_score.energy),
         },
+        "weather_summary": _build_weather_summary(latest_score, trend_scores, weather_location),
     }
 
 
@@ -271,6 +274,176 @@ def _build_risk_distribution(values, total):
         risk_distribution[risk_level] = {"count": count, "percent": float(percentage)}
 
     return risk_distribution
+
+
+def _build_weather_summary(latest_score, trend_scores, weather_location):
+    if weather_location and weather_location.get("disabled"):
+        return {
+            "current": {
+                "status": "disabled",
+                "temperature_c": None,
+                "precipitation_mm": None,
+                "condition": "unknown",
+                "observed_at": None,
+                "location": None,
+                "source": None,
+            },
+            "recommendation": None,
+            "signals": {
+                "energy_level": None,
+                "motivation_level": None,
+                "stress_level": None,
+                "burnout_trend": _derive_trend_signal(trend_scores)["status"],
+                "weather_type": "unknown",
+            },
+            "weather_sensitivity": _build_weather_sensitivity(trend_scores),
+        }
+
+    weather = get_current_weather(weather_location)
+    weather_type = _weather_type(weather)
+    trend_signal = _derive_trend_signal(trend_scores)
+
+    if latest_score is None:
+        recommendation = (
+            "Заполни недельный опрос, чтобы получить персональную рекомендацию на основе "
+            "стресса, энергии и динамики."
+        )
+        signals = {
+            "energy_level": None,
+            "motivation_level": None,
+            "stress_level": None,
+            "burnout_trend": trend_signal["status"],
+            "weather_type": weather_type,
+        }
+    else:
+        energy = _to_percent(latest_score.energy)
+        motivation = _to_percent(latest_score.motivation)
+        stress = _to_percent(latest_score.stress)
+        signals = {
+            "energy_level": _bucket_level(energy),
+            "motivation_level": _bucket_level(motivation),
+            "stress_level": _bucket_level(stress),
+            "burnout_trend": trend_signal["status"],
+            "weather_type": weather_type,
+        }
+        recommendation = _build_weather_recommendation(
+            energy,
+            motivation,
+            stress,
+            trend_signal["status"],
+            weather_type,
+        )
+
+    return {
+        "current": _weather_payload(weather),
+        "recommendation": recommendation,
+        "signals": signals,
+        "weather_sensitivity": _build_weather_sensitivity(trend_scores),
+    }
+
+
+def _weather_payload(weather):
+    if weather is None:
+        return {
+            "status": "unavailable",
+            "temperature_c": None,
+            "precipitation_mm": None,
+            "condition": "unknown",
+            "observed_at": None,
+            "location": None,
+            "source": None,
+        }
+    return weather
+
+
+def _build_weather_recommendation(
+    energy,
+    motivation,
+    stress,
+    trend_status,
+    weather_type,
+):
+    energy_level = _bucket_level(energy)
+    motivation_level = _bucket_level(motivation)
+    stress_level = _bucket_level(stress)
+    weather_bad = weather_type in {"rain", "storm", "snow", "drizzle", "fog"}
+    weather_good = weather_type in {"sunny", "clear"}
+
+    if trend_status == "rising" and weather_bad:
+        return (
+            "Рост стресса + плохая погода: риск перегруза. "
+            "Снизь нагрузку, добавь паузы и минимум переключений."
+        )
+    if energy_level == "low" and weather_bad:
+        return "Низкая энергия и дождь: лучше снизить нагрузку и выбрать восстановительные задачи."
+    if motivation_level == "high" and weather_good:
+        return "Высокая мотивация и солнце: самое время сфокусироваться на сложных задачах."
+    if stress_level == "high":
+        return "Высокий стресс: сократи контекстные переключения и делай короткие перерывы."
+    if energy_level == "low":
+        return "Низкая энергия: планируй легкие задачи и восстановление."
+    if weather_bad:
+        return "Плохая погода: делай паузы и береги ресурс, особенно во второй половине дня."
+    if weather_good:
+        return "Хорошая погода: можно брать более сложные задачи и держать высокий темп."
+    return "Сохраняй ровный темп и проверяй самочувствие в течение дня."
+
+
+def _bucket_level(value, low=40, high=70):
+    if value is None:
+        return None
+    if value < low:
+        return "low"
+    if value > high:
+        return "high"
+    return "medium"
+
+
+def _derive_trend_signal(trend_scores):
+    if len(trend_scores) < 3:
+        return {"status": "insufficient_data", "delta": 0.0}
+
+    first = Decimal(trend_scores[0].burnout_index_stable)
+    last = Decimal(trend_scores[-1].burnout_index_stable)
+    delta = (last - first).quantize(HUNDREDTH, rounding=ROUND_HALF_UP)
+    if delta >= Decimal("5"):
+        status = "rising"
+    elif delta <= Decimal("-5"):
+        status = "declining"
+    else:
+        status = "stable"
+    return {"status": status, "delta": float(delta)}
+
+
+def _weather_type(weather):
+    if not weather:
+        return "unknown"
+    condition = weather.get("condition")
+    precipitation = weather.get("precipitation_mm")
+    if condition in {"rain", "storm", "snow", "drizzle"}:
+        return condition
+    if precipitation is not None and precipitation >= 1:
+        return "rain"
+    if condition in {"sunny"}:
+        return "sunny"
+    if condition in {"cloudy", "fog"}:
+        return condition
+    return "unknown"
+
+
+def _build_weather_sensitivity(trend_scores):
+    min_required = 6
+    if len(trend_scores) < min_required:
+        return {
+            "index": None,
+            "status": "insufficient_data",
+            "min_required": min_required,
+        }
+    return {
+        "index": None,
+        "status": "not_collected",
+        "min_required": min_required,
+    }
 
 
 def _to_percent(score):

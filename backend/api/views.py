@@ -35,7 +35,28 @@ class EmployeeDashboardView(APIView):
     required_permissions = ("users.view_own_dashboard",)
 
     def get(self, request):
-        dashboard = get_employee_dashboard(request.user)
+        lat_param = request.query_params.get("lat")
+        lon_param = request.query_params.get("lon")
+        location_name = request.query_params.get("location_name")
+        weather_location = {"disabled": True}
+
+        if lat_param is not None or lon_param is not None:
+            try:
+                lat = float(lat_param)
+                lon = float(lon_param)
+            except (TypeError, ValueError):
+                return Response(
+                    {"detail": "Query parameters 'lat' and 'lon' must be numbers."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+                return Response(
+                    {"detail": "Query parameters 'lat' and 'lon' are out of range."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            weather_location = {"lat": lat, "lon": lon, "name": location_name}
+
+        dashboard = get_employee_dashboard(request.user, weather_location=weather_location)
         return Response(dashboard)
 
 

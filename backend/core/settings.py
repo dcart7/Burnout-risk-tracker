@@ -190,6 +190,15 @@ CACHE_BACKEND = os.getenv("CACHE_BACKEND", "redis").lower()
 REDIS_CACHE_URL = os.getenv("REDIS_CACHE_URL", "redis://localhost:6379/1")
 ANALYTICS_CACHE_TTL = int(os.getenv("ANALYTICS_CACHE_TTL", "300"))
 
+WEATHER_PROVIDER = os.getenv("WEATHER_PROVIDER", "open_meteo").lower()
+WEATHER_LAT = os.getenv("WEATHER_LAT")
+WEATHER_LON = os.getenv("WEATHER_LON")
+WEATHER_LOCATION_NAME = os.getenv("WEATHER_LOCATION_NAME", "Unknown")
+WEATHER_CACHE_TTL = int(os.getenv("WEATHER_CACHE_TTL", "900"))
+WEATHER_STUB_CONDITION = os.getenv("WEATHER_STUB_CONDITION", "sunny")
+WEATHER_STUB_TEMPERATURE_C = float(os.getenv("WEATHER_STUB_TEMPERATURE_C", "21.0"))
+WEATHER_STUB_PRECIP_MM = float(os.getenv("WEATHER_STUB_PRECIP_MM", "0.0"))
+
 if CACHE_BACKEND == "locmem":
     CACHES = {
         "default": {
